@@ -1,5 +1,6 @@
 package com.duchastel.simon.devicesync
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -30,6 +31,7 @@ class BluetoothMonitorService : Service() {
             private set
     }
 
+    @SuppressLint("MissingPermission")
     private val bluetoothReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -134,6 +136,7 @@ class BluetoothMonitorService : Service() {
         return mac.uppercase().replace(":", "").replace("-", "")
     }
 
+    @SuppressLint("MissingPermission")
     private fun checkInitialConnectionStatus() {
         // Check if keyboard is already connected and connect trackpad if so
         val bluetoothManager = getSystemService(Context.BLUETOOTH_SERVICE) as android.bluetooth.BluetoothManager
