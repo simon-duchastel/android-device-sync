@@ -1,5 +1,6 @@
 package com.duchastel.simon.devicesync
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
@@ -18,6 +19,7 @@ class BluetoothConnectionManager(private val context: Context) {
     private val adapter: BluetoothAdapter? = bluetoothManager?.adapter
     private val handler = Handler(Looper.getMainLooper())
 
+    @SuppressLint("MissingPermission")
     fun connectTrackpad(macAddress: String) {
         if (adapter == null) {
             Log.e(TAG, "Bluetooth adapter not available")
@@ -289,6 +291,7 @@ class BluetoothConnectionManager(private val context: Context) {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun tryConnectGatt(device: BluetoothDevice) {
         try {
             Log.d(TAG, "Attempting GATT connection...")
