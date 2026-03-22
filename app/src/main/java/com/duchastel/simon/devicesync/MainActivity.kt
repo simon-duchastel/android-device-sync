@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -114,6 +115,7 @@ fun MainScreen(
     
     var keyboardMac by remember { mutableStateOf(prefs.getString("keyboard_mac", "") ?: "") }
     var trackpadMac by remember { mutableStateOf(prefs.getString("trackpad_mac", "") ?: "") }
+    var autoDisconnectTrackpad by remember { mutableStateOf(prefs.getBoolean("auto_disconnect_trackpad", true)) }
     var isRunning by remember { mutableStateOf(BluetoothMonitorService.isRunning) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -199,6 +201,26 @@ fun MainScreen(
             }
         )
 
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Auto-disconnect trackpad checkbox
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = autoDisconnectTrackpad,
+                onCheckedChange = { 
+                    autoDisconnectTrackpad = it
+                    prefs.edit().putBoolean("auto_disconnect_trackpad", it).apply()
+                }
+            )
+            Text(
+                text = "Auto-disconnect trackpad when keyboard disconnects",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+
         Spacer(modifier = Modifier.height(24.dp))
 
         // Status text
@@ -234,6 +256,7 @@ fun MainScreen(
                     prefs.edit().apply {
                         putString("keyboard_mac", keyboardMac)
                         putString("trackpad_mac", trackpadMac)
+                        putBoolean("auto_disconnect_trackpad", autoDisconnectTrackpad)
                         apply()
                     }
 
@@ -244,6 +267,7 @@ fun MainScreen(
                     val serviceIntent = Intent(context, BluetoothMonitorService::class.java).apply {
                         putExtra("keyboard_mac", keyboardMac)
                         putExtra("trackpad_mac", trackpadMac)
+                        putExtra("auto_disconnect_trackpad", autoDisconnectTrackpad)
                     }
 
                     context.startForegroundService(serviceIntent)

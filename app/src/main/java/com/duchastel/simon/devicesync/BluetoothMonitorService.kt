@@ -21,6 +21,7 @@ class BluetoothMonitorService : Service() {
     private lateinit var bluetoothConnectionManager: BluetoothConnectionManager
     private var keyboardMac: String = ""
     private var trackpadMac: String = ""
+    private var autoDisconnectTrackpad: Boolean = true
     private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
@@ -63,7 +64,14 @@ class BluetoothMonitorService : Service() {
                     }
 
                     device?.let {
-                        Log.d(TAG, "Device disconnected: ${it.name} (${it.address})")
+                        val deviceAddress = it.address
+                        val deviceName = it.name ?: "Unknown"
+                        Log.d(TAG, "Device disconnected: $deviceName ($deviceAddress)")
+
+                        if (matchesKeyboard(deviceAddress) && autoDisconnectTrackpad) {
+                            Log.d(TAG, "Keyboard disconnected! Auto-disconnecting trackpad...")
+                            bluetoothConnectionManager.disconnectDevice(trackpadMac)
+                        }
                     }
                 }
             }
@@ -84,6 +92,7 @@ class BluetoothMonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         keyboardMac = intent?.getStringExtra("keyboard_mac") ?: ""
         trackpadMac = intent?.getStringExtra("trackpad_mac") ?: ""
+        autoDisconnectTrackpad = intent?.getBooleanExtra("auto_disconnect_trackpad", true) ?: true
 
         if (keyboardMac.isEmpty() || trackpadMac.isEmpty()) {
             Log.e(TAG, "MAC addresses not provided")
@@ -100,7 +109,7 @@ class BluetoothMonitorService : Service() {
         registerBluetoothReceiver()
         isRunning = true
 
-        Log.d(TAG, "Service started - monitoring keyboard: $keyboardMac, trackpad: $trackpadMac")
+        Log.d(TAG, "Service started - monitoring keyboard: $keyboardMac, trackpad: $trackpadMac, autoDisconnect: $autoDisconnectTrackpad")
 
         // Check if keyboard is already connected
         checkInitialConnectionStatus()

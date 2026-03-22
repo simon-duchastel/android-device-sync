@@ -53,6 +53,124 @@ class BluetoothConnectionManager(private val context: Context) {
         Log.e(TAG, "Trackpad not found in paired devices: $macAddress")
     }
 
+    fun disconnectDevice(macAddress: String) {
+        if (adapter == null) {
+            Log.e(TAG, "Bluetooth adapter not available")
+            return
+        }
+
+        if (!adapter.isEnabled) {
+            Log.e(TAG, "Bluetooth is disabled")
+            return
+        }
+
+        val normalizedMac = normalizeMac(macAddress)
+        val bondedDevices = adapter.bondedDevices
+
+        for (device in bondedDevices) {
+            if (normalizeMac(device.address) == normalizedMac) {
+                Log.d(TAG, "Found device to disconnect: ${device.name} (${device.address})")
+
+                // Check if connected before attempting disconnect
+                if (!isDeviceConnected(device)) {
+                    Log.d(TAG, "Device is not connected, nothing to disconnect")
+                    return
+                }
+
+                // Try to disconnect using reflection
+                disconnectUsingReflection(device)
+                return
+            }
+        }
+
+        Log.e(TAG, "Device not found in paired devices: $macAddress")
+    }
+
+    private fun disconnectUsingReflection(device: BluetoothDevice) {
+        try {
+            // Method 1: Try using BluetoothHidHost hidden API (for HID devices like trackpads)
+            disconnectUsingHidHost(device)
+        } catch (e: Exception) {
+            Log.w(TAG, "HID host disconnect failed, trying alternative methods", e)
+            try {
+                // Method 2: Try using disconnect method directly on device
+                disconnectUsingDeviceMethod(device)
+            } catch (e2: Exception) {
+                Log.e(TAG, "All disconnect methods failed", e2)
+            }
+        }
+    }
+
+    private fun disconnectUsingHidHost(device: BluetoothDevice) {
+        try {
+            Log.d(TAG, "Attempting HID host disconnect...")
+
+            // Get BluetoothHidHost class via reflection
+            val hidHostClass = Class.forName("android.bluetooth.BluetoothHidHost")
+
+            // Get the HID_HOST profile constant
+            val hidHostProfileField = hidHostClass.getDeclaredField("HID_HOST")
+            val hidHostProfile = hidHostProfileField.get(null) as Int
+
+            // Get BluetoothProfile proxy
+            val serviceListener = object : android.bluetooth.BluetoothProfile.ServiceListener {
+                override fun onServiceConnected(profile: Int, proxy: android.bluetooth.BluetoothProfile) {
+                    try {
+                        if (profile == hidHostProfile) {
+                            // Call disconnect method on the proxy
+                            val disconnectMethod = proxy.javaClass.getMethod("disconnect", BluetoothDevice::class.java)
+                            val result = disconnectMethod.invoke(proxy, device) as Boolean
+
+                            if (result) {
+                                Log.d(TAG, "HID disconnect call succeeded")
+                            } else {
+                                Log.e(TAG, "HID disconnect call returned false")
+                            }
+
+                            // Close the proxy
+                            try {
+                                val closeMethod = proxy.javaClass.getMethod("closeProxy")
+                                closeMethod.invoke(proxy)
+                            } catch (e: Exception) {
+                                // Method might not exist, ignore
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in HID service disconnect", e)
+                    }
+                }
+
+                override fun onServiceDisconnected(profile: Int) {
+                    Log.d(TAG, "HID service disconnected")
+                }
+            }
+
+            // Get the proxy
+            adapter?.getProfileProxy(context, serviceListener, hidHostProfile)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "HID host disconnect error", e)
+            throw e
+        }
+    }
+
+    private fun disconnectUsingDeviceMethod(device: BluetoothDevice) {
+        try {
+            Log.d(TAG, "Attempting device disconnect method...")
+
+            // Try to call the disconnect method on the device
+            val disconnectMethod = device.javaClass.getDeclaredMethod("disconnect")
+            disconnectMethod.isAccessible = true
+            val result = disconnectMethod.invoke(device)
+
+            Log.d(TAG, "Device disconnect result: $result")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Device disconnect method error", e)
+            throw e
+        }
+    }
+
     fun isDeviceConnected(device: BluetoothDevice): Boolean {
         return try {
             val method = device.javaClass.getMethod("isConnected")
