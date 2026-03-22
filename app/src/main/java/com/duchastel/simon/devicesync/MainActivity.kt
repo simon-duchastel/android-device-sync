@@ -40,6 +40,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.clickable
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -80,15 +81,23 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MainScreen(
-                        prefs = prefs,
-                        requiredPermissions = requiredPermissions,
-                        onRequestPermissions = { 
-                            permissionLauncher?.launch(it)
-                        },
-                        onCheckPermissions = { checkPermissions() },
-                        onCheckBatteryOptimization = { checkBatteryOptimization(this) }
-                    )
+                    var currentScreen by remember { mutableStateOf<Screen>(Screen.Main) }
+
+                    when (currentScreen) {
+                        is Screen.Main -> MainScreen(
+                            prefs = prefs,
+                            requiredPermissions = requiredPermissions,
+                            onRequestPermissions = {
+                                permissionLauncher?.launch(it)
+                            },
+                            onCheckPermissions = { checkPermissions() },
+                            onCheckBatteryOptimization = { checkBatteryOptimization(this) },
+                            onNavigateToLogs = { currentScreen = Screen.Logs }
+                        )
+                        is Screen.Logs -> LogsScreen(
+                            onNavigateBack = { currentScreen = Screen.Main }
+                        )
+                    }
                 }
             }
         }
@@ -101,13 +110,19 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+sealed class Screen {
+    object Main : Screen()
+    object Logs : Screen()
+}
+
 @Composable
 fun MainScreen(
     prefs: android.content.SharedPreferences,
     requiredPermissions: Array<String>,
     onRequestPermissions: (Array<String>) -> Unit,
     onCheckPermissions: () -> Boolean,
-    onCheckBatteryOptimization: () -> Unit
+    onCheckBatteryOptimization: () -> Unit,
+    onNavigateToLogs: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -269,6 +284,16 @@ fun MainScreen(
         }
 
         Spacer(modifier = Modifier.height(32.dp))
+
+        // Logs button
+        Button(
+            onClick = onNavigateToLogs,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("View Logs")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         // Instructions
         Text(
