@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Device Sync</string>
+    <string name="setup_instructions">Run setup.sh via ADB to grant permissions</string>
+</resources>

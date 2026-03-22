@@ -1,0 +1,67 @@
+# Gradle files
+.gradle/
+build/
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Android Studio files
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# User-specific configurations
+*.swp
+*.swo
+*~
+
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle wrapper jar (should be committed, but if you prefer not to)
+# gradle/wrapper/gradle-wrapper.jar
+
+# External native build folder generated in Android Studio 2.2+
+.externalNativeBuild
+.cxx/
+
+# Version control
+vcs.xml
+
+# lint
+lint/intermediates/
+lint/generated/
+lint/outputs/
+lint/tmp/
+lint/reports/
+
+# Keystore files (DO NOT COMMIT YOUR RELEASE KEYSTORE)
+*.jks
+*.keystore
+
+# Google Services (e.g. APIs or Firebase)
+google-services.json
+
+# Android Profiling
+*.hprof
+
+# Kotlin
+.kotlin/
