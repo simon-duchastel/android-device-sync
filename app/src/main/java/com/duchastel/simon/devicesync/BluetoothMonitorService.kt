@@ -24,7 +24,6 @@ class BluetoothMonitorService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
-        const val TAG = "DeviceSync"
         const val CHANNEL_ID = "bluetooth_monitor_channel"
         const val NOTIFICATION_ID = 1
         var isRunning = false
@@ -47,10 +46,13 @@ class BluetoothMonitorService : Service() {
                         val deviceAddress = it.address
                         val deviceName = it.name ?: "Unknown"
                         logger.log("Device connected: $deviceName ($deviceAddress)")
+                        logger.log("Comparing against keyboard MAC: $keyboardMac (normalized: ${normalizeMac(keyboardMac)} vs ${normalizeMac(deviceAddress)})")
 
                         if (matchesKeyboard(deviceAddress)) {
                             logger.log("Keyboard connected! Attempting to connect trackpad...")
                             bluetoothConnectionManager.connectTrackpad(trackpadMac)
+                        } else {
+                            logger.log("Device does not match configured keyboard MAC")
                         }
                     }
                 }
@@ -86,8 +88,11 @@ class BluetoothMonitorService : Service() {
         keyboardMac = intent?.getStringExtra("keyboard_mac") ?: ""
         trackpadMac = intent?.getStringExtra("trackpad_mac") ?: ""
 
+        logger.log("Received keyboard MAC: '$keyboardMac'")
+        logger.log("Received trackpad MAC: '$trackpadMac'")
+
         if (keyboardMac.isEmpty() || trackpadMac.isEmpty()) {
-            logger.log("MAC addresses not provided")
+            logger.log("ERROR: MAC addresses not provided - keyboard: '${keyboardMac}', trackpad: '${trackpadMac}'")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -102,6 +107,7 @@ class BluetoothMonitorService : Service() {
         isRunning = true
 
         logger.log("Service started - monitoring keyboard: $keyboardMac, trackpad: $trackpadMac")
+        logger.log("=== SERVICE VERSION: DEBUG-V2 ===")
 
         // Check if keyboard is already connected
         checkInitialConnectionStatus()
@@ -163,17 +169,15 @@ class BluetoothMonitorService : Service() {
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Bluetooth Monitor",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Monitors Bluetooth connections"
-            }
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Bluetooth Monitor",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Monitors Bluetooth connections"
         }
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(channel)
     }
 
     private fun createNotification(): Notification {

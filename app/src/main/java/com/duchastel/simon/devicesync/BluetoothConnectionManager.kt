@@ -4,23 +4,19 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 
 class BluetoothConnectionManager(private val context: Context) {
-    companion object {
-        const val TAG = "DeviceSync"
-    }
-
     private val logger = Logger.getInstance(context)
 
     private val bluetoothManager: BluetoothManager? = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val adapter: BluetoothAdapter? = bluetoothManager?.adapter
-    private val handler = Handler(Looper.getMainLooper())
 
     @SuppressLint("MissingPermission")
     fun connectTrackpad(macAddress: String) {
+        logger.log("Connecting trackpad with MAC: $macAddress")
+
         if (adapter == null) {
             logger.log("Bluetooth adapter not available")
             return
@@ -32,7 +28,14 @@ class BluetoothConnectionManager(private val context: Context) {
         }
 
         val normalizedMac = normalizeMac(macAddress)
+        logger.log("Normalized trackpad MAC: $normalizedMac")
+        
         val bondedDevices = adapter.bondedDevices
+        logger.log("Found ${bondedDevices.size} bonded devices")
+        
+        bondedDevices.forEach { device ->
+            logger.log("  Bonded device: ${device.name} (${device.address}) [normalized: ${normalizeMac(device.address)}]")
+        }
 
         for (device in bondedDevices) {
             if (normalizeMac(device.address) == normalizedMac) {
@@ -44,8 +47,8 @@ class BluetoothConnectionManager(private val context: Context) {
                     return
                 }
 
-                // Try to connect using reflection
-                connectUsingReflection(device)
+                // Try to connect
+                connectToDevice(device)
                 return
             }
         }
@@ -57,7 +60,7 @@ class BluetoothConnectionManager(private val context: Context) {
         return try {
             val method = device.javaClass.getMethod("isConnected")
             method.invoke(device) as Boolean
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Fallback: check if device is in the connected devices list via reflection
             try {
                 val bluetoothManagerClass = Class.forName("android.bluetooth.BluetoothManager")
@@ -72,146 +75,84 @@ class BluetoothConnectionManager(private val context: Context) {
         }
     }
 
-    private fun connectUsingReflection(device: BluetoothDevice) {
-        try {
-            // Method 1: Try using BluetoothHidHost hidden API (for HID devices like trackpads)
-            connectUsingHidHost(device)
-        } catch (e: Exception) {
-            logger.log("HID host connection failed, trying alternative methods: ${e.message}")
-            try {
-                // Method 2: Try using createBond with HID profile
-                connectUsingCreateBond(device)
-            } catch (e2: Exception) {
-                logger.log("All connection methods failed: ${e2.message}")
-            }
-        }
-    }
+    private fun connectToDevice(device: BluetoothDevice) {
+        logger.log("Connecting to device via INPUT_DEVICE profile (profile 2)...")
+        
+        adapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile?) {
+                if (profile != 2) { // INPUT_DEVICE = 2
+                    return
+                }
 
-    private fun connectUsingHidHost(device: BluetoothDevice) {
-        try {
-            logger.log("Attempting HID host connection...")
-
-            // Get BluetoothHidHost class via reflection
-            val hidHostClass = Class.forName("android.bluetooth.BluetoothHidHost")
-
-            // Get the HID_HOST profile constant
-            val hidHostProfileField = hidHostClass.getDeclaredField("HID_HOST")
-            val hidHostProfile = hidHostProfileField.get(null) as Int
-
-            // Get BluetoothProfile proxy
-            val serviceListener = object : android.bluetooth.BluetoothProfile.ServiceListener {
-                        override fun onServiceConnected(profile: Int, proxy: android.bluetooth.BluetoothProfile) {
-                    try {
-                        if (profile == hidHostProfile) {
-                            // Call connect method on the proxy
-                            val connectMethod = proxy.javaClass.getMethod("connect", BluetoothDevice::class.java)
-                            val result = connectMethod.invoke(proxy, device) as Boolean
-
-                            if (result) {
-                                logger.log("HID connect call succeeded")
-                                // Verify connection after a delay
-                                handler.postDelayed({
-                                    if (isDeviceConnected(device)) {
-                                        logger.log("Trackpad connected successfully via HID")
-                                    } else {
-                                        logger.log("Trackpad connection may have failed")
-                                    }
-                                }, 2000)
-                            } else {
-                                logger.log("HID connect call returned false")
-                            }
-
-                            // Close the proxy
-                            try {
-                                val closeMethod = proxy.javaClass.getMethod("closeProxy")
-                                closeMethod.invoke(proxy)
-                            } catch (e: Exception) {
-                                // Method might not exist, ignore
+                logger.log("Connected to INPUT_DEVICE profile")
+                
+                // Try to connect using reflection since INPUT_DEVICE has privileged methods
+                try {
+                    val connectMethod = proxy?.javaClass?.getMethod("connect", BluetoothDevice::class.java)
+                    val success = connectMethod?.invoke(proxy, device) as? Boolean ?: false
+                    logger.log("connect() returned: $success")
+                    
+                    if (!success) {
+                        // Try setConnectionPolicy as fallback
+                        try {
+                            val setPolicyMethod = proxy?.javaClass?.getMethod("setConnectionPolicy", 
+                                BluetoothDevice::class.java, Int::class.javaPrimitiveType)
+                            val result = setPolicyMethod?.invoke(proxy, device, 100) // 100 = CONNECTION_POLICY_ALLOWED
+                            logger.log("setConnectionPolicy() returned: $result")
+                        } catch (e: Exception) {
+                            logger.log("setConnectionPolicy failed: ${e.message}")
+                            if (e is SecurityException || e.cause is SecurityException) {
+                                triggerConnectionDialog()
                             }
                         }
-                    } catch (e: Exception) {
-                        logger.log("Error in HID service connection: ${e.message}")
                     }
-                }
-
-                override fun onServiceDisconnected(profile: Int) {
-                    logger.log("HID service disconnected")
-                }
-            }
-
-            // Get the proxy
-            adapter?.getProfileProxy(context, serviceListener, hidHostProfile)
-
-        } catch (e: Exception) {
-            logger.log("HID host connection error: ${e.message}")
-            throw e
-        }
-    }
-
-    private fun connectUsingCreateBond(device: BluetoothDevice) {
-        try {
-            logger.log("Attempting createBond connection...")
-
-            // For already bonded devices, we can try to trigger a connection
-            // by calling connectGatt or using the hidden connect method
-            val connectMethod = device.javaClass.getDeclaredMethod("connect")
-            connectMethod.isAccessible = true
-            val result = connectMethod.invoke(device)
-
-            logger.log("CreateBond connect result: $result")
-
-            // Also try the standard connectGatt approach
-            handler.postDelayed({
-                if (!isDeviceConnected(device)) {
-                    tryConnectGatt(device)
-                }
-            }, 1000)
-
-        } catch (e: Exception) {
-            logger.log("CreateBond connection error: ${e.message}")
-            throw e
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun tryConnectGatt(device: BluetoothDevice) {
-        try {
-            logger.log("Attempting GATT connection...")
-
-            // Use reflection to access connectGatt with specific transport
-            val connectGattMethod = device.javaClass.getDeclaredMethod(
-                "connectGatt",
-                Context::class.java,
-                Boolean::class.javaPrimitiveType,
-                android.bluetooth.BluetoothGattCallback::class.java,
-                Int::class.javaPrimitiveType
-            )
-
-            val gattCallback = object : android.bluetooth.BluetoothGattCallback() {
-                override fun onConnectionStateChange(gatt: android.bluetooth.BluetoothGatt, status: Int, newState: Int) {
-                    when (newState) {
-                        android.bluetooth.BluetoothProfile.STATE_CONNECTED -> {
-                            logger.log("GATT connected")
-                            gatt.disconnect()
-                            gatt.close()
-                        }
-                        android.bluetooth.BluetoothProfile.STATE_DISCONNECTED -> {
-                            logger.log("GATT disconnected")
-                            gatt.close()
-                        }
+                } catch (e: Exception) {
+                    logger.log("Connection failed: ${e.message}")
+                    if (e is SecurityException || e.cause is SecurityException) {
+                        triggerConnectionDialog()
                     }
                 }
             }
 
-            // TRANSPORT_LE = 2, TRANSPORT_BREDR = 1, TRANSPORT_AUTO = 0
-            connectGattMethod.invoke(device, context, false, gattCallback, 1)
-
-        } catch (e: Exception) {
-            logger.log("GATT connection error: ${e.message}")
-        }
+            override fun onServiceDisconnected(profile: Int) {
+                if (profile == 2) { // INPUT_DEVICE = 2
+                    logger.log("Disconnected from INPUT_DEVICE profile")
+                }
+            }
+        }, 2) // INPUT_DEVICE profile
     }
 
     private fun normalizeMac(mac: String): String {
         return mac.uppercase().replace(":", "").replace("-", "")
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun triggerConnectionDialog() {
+        logger.log("Opening system Bluetooth device picker...")
+        try {
+            // Launch system device picker
+            val intent = android.content.Intent("android.bluetooth.devicepicker.action.LAUNCH")
+            intent.putExtra("android.bluetooth.devicepicker.extra.NEED_AUTH", true)
+            intent.putExtra("android.bluetooth.devicepicker.extra.FILTER_TYPE", 0) // 0 = All devices
+            intent.putExtra("android.bluetooth.devicepicker.extra.LAUNCH_PACKAGE", context.packageName)
+            intent.putExtra("android.bluetooth.devicepicker.extra.DEVICE_PICKER_LAUNCH_CLASS", 
+                "com.duchastel.simon.devicesync.DevicePickerReceiver")
+            intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            context.startActivity(intent)
+            logger.log("Device picker launched!")
+        } catch (e: Exception) {
+            logger.log("Failed to launch device picker: ${e.message}")
+
+            // Fallback: Try Bluetooth settings
+            try {
+                val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                intent.setClassName("com.android.settings", "com.android.settings.bluetooth.BluetoothSettings")
+                intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                context.startActivity(intent)
+                logger.log("Opened Bluetooth settings as fallback")
+            } catch (e2: Exception) {
+                logger.log("Failed to open Bluetooth settings: ${e2.message}")
+            }
+        }
     }
 }
