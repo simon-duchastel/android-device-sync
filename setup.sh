@@ -3,7 +3,7 @@
 # Device Sync Android Setup Script
 # Run this after installing the APK to grant necessary permissions
 
-PACKAGE_NAME="com.devicesync.bluetooth"
+PACKAGE_NAME="com.duchastel.simon.devicesync"
 
 echo "Device Sync - Android Setup"
 echo "=========================="
@@ -52,6 +52,30 @@ echo "3. Granting Bluetooth permissions..."
 adb shell pm grant $PACKAGE_NAME android.permission.BLUETOOTH_SCAN 2>/dev/null || echo "   ! BLUETOOTH_SCAN may require manual grant"
 adb shell pm grant $PACKAGE_NAME android.permission.BLUETOOTH_CONNECT 2>/dev/null || echo "   ! BLUETOOTH_CONNECT may require manual grant"
 adb shell pm grant $PACKAGE_NAME android.permission.ACCESS_FINE_LOCATION 2>/dev/null || echo "   ! Location permission may require manual grant"
+
+# Try to grant BLUETOOTH_PRIVILEGED (requires elevated privileges)
+echo ""
+echo "4. Attempting to grant BLUETOOTH_PRIVILEGED (for auto-connect)..."
+echo "   This requires elevated ADB access..."
+
+# Try with regular adb first
+adb shell pm grant $PACKAGE_NAME android.permission.BLUETOOTH_PRIVILEGED 2>/dev/null
+if [ $? -eq 0 ]; then
+    echo "   ✓ BLUETOOTH_PRIVILEGED granted via ADB"
+else
+    # Try with root
+    echo "   Trying with root access..."
+    adb shell su -c "pm grant $PACKAGE_NAME android.permission.BLUETOOTH_PRIVILEGED" 2>/dev/null
+    if [ $? -eq 0 ]; then
+        echo "   ✓ BLUETOOTH_PRIVILEGED granted via root"
+    else
+        echo "   ✗ Could not grant BLUETOOTH_PRIVILEGED"
+        echo ""
+        echo "   Alternative: Installing as system app..."
+        echo "   This requires full root access. The app will work with limited functionality"
+        echo "   (manual trackpad connection required) without this permission."
+    fi
+fi
 
 echo ""
 echo "4. Setting up auto-start (optional)..."
