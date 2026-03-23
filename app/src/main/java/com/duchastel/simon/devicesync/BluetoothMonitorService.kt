@@ -14,11 +14,11 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.util.Log
 import androidx.core.app.NotificationCompat
 
 class BluetoothMonitorService : Service() {
     private lateinit var bluetoothConnectionManager: BluetoothConnectionManager
+    private lateinit var logger: Logger
     private var keyboardMac: String = ""
     private var trackpadMac: String = ""
     private var wakeLock: PowerManager.WakeLock? = null
@@ -46,10 +46,10 @@ class BluetoothMonitorService : Service() {
                     device?.let {
                         val deviceAddress = it.address
                         val deviceName = it.name ?: "Unknown"
-                        Log.d(TAG, "Device connected: $deviceName ($deviceAddress)")
+                        logger.log("Device connected: $deviceName ($deviceAddress)")
 
                         if (matchesKeyboard(deviceAddress)) {
-                            Log.d(TAG, "Keyboard connected! Attempting to connect trackpad...")
+                            logger.log("Keyboard connected! Attempting to connect trackpad...")
                             bluetoothConnectionManager.connectTrackpad(trackpadMac)
                         }
                     }
@@ -63,7 +63,7 @@ class BluetoothMonitorService : Service() {
                     }
 
                     device?.let {
-                        Log.d(TAG, "Device disconnected: ${it.name} (${it.address})")
+                        logger.log("Device disconnected: ${it.name} (${it.address})")
                     }
                 }
             }
@@ -73,6 +73,7 @@ class BluetoothMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         bluetoothConnectionManager = BluetoothConnectionManager(this)
+        logger = Logger.getInstance(this)
 
         // Acquire wake lock to keep CPU running
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -86,7 +87,7 @@ class BluetoothMonitorService : Service() {
         trackpadMac = intent?.getStringExtra("trackpad_mac") ?: ""
 
         if (keyboardMac.isEmpty() || trackpadMac.isEmpty()) {
-            Log.e(TAG, "MAC addresses not provided")
+            logger.log("MAC addresses not provided")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -100,7 +101,7 @@ class BluetoothMonitorService : Service() {
         registerBluetoothReceiver()
         isRunning = true
 
-        Log.d(TAG, "Service started - monitoring keyboard: $keyboardMac, trackpad: $trackpadMac")
+        logger.log("Service started - monitoring keyboard: $keyboardMac, trackpad: $trackpadMac")
 
         // Check if keyboard is already connected
         checkInitialConnectionStatus()
@@ -115,7 +116,7 @@ class BluetoothMonitorService : Service() {
             if (it.isHeld) it.release()
         }
         isRunning = false
-        Log.d(TAG, "Service destroyed")
+        logger.log("Service destroyed")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -149,12 +150,12 @@ class BluetoothMonitorService : Service() {
                     try {
                         val isConnected = bluetoothConnectionManager.isDeviceConnected(device)
                         if (isConnected) {
-                            Log.d(TAG, "Keyboard already connected on startup, connecting trackpad")
+                            logger.log("Keyboard already connected on startup, connecting trackpad")
                             bluetoothConnectionManager.connectTrackpad(trackpadMac)
                             break
                         }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error checking initial connection status", e)
+                        logger.log("Error checking initial connection status: ${e.message}")
                     }
                 }
             }
